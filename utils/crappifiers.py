@@ -5,6 +5,7 @@ from scipy.ndimage.interpolation import zoom as npzoom
 from skimage.transform import rescale
 import PIL
 
+# Normalizes arr
 def downscale(arr):
     dtype = arr.dtype
     arr = arr.astype(np.float32)
@@ -14,9 +15,21 @@ def downscale(arr):
     
     return (arr - og_min) / (og_max - og_min), (og_min, og_max)
     
+# Changes normalized array to its original range
 def upscale(arr, extrema):
     og_min, og_max = extrema
     return (arr * float(og_max - og_min) + og_min).astype(np.float32)
+    
+# Assumes image data is normalized
+def recenter(img_new, img_og):
+    out = img_new.copy()
+    mean_diff = np.mean(img_new) - np.mean(img_og)
+    if mean_diff > 0:
+        out[out < mean_diff] = 0
+    elif mean_diff < 0:
+        out[out > (1 - mean_diff)] = 0
+    out -= mean_diff
+    return out
 
 def zero_crap(img, scale=4, upsample=False):
     from skimage.transform import rescale
@@ -163,12 +176,15 @@ def zero_crap(img, scale=4, upsample=False):
 def new_crap_AG_SP(x, scale=4, upsample=False):
     xn = np.array(x).astype(np.float32)
     xn, extrema = downscale(xn)
+    xn_og = xn.copy()
+    
+    xn = random_noise(xn, mode='salt', amount=0.001)
+    xn = random_noise(xn, mode='pepper', amount=0.001)
 
-    lvar = filters.gaussian(xn, sigma=5) + 1e-10
+    lvar = filters.gaussian(xn, sigma=3) + 1e-10
     xn = random_noise(xn, mode='localvar', local_vars=lvar*0.1)
 
-    xn = random_noise(xn, mode='salt', amount=0.0075)
-    xn = random_noise(xn, mode='pepper', amount=0.005)
+    xn = recenter(xn, xn_og)
 
     xn = upscale(xn, extrema)
     
@@ -189,12 +205,12 @@ def new_crap_AG_blur_SP(img, scale=4, upsample=False):
     
     og_mean = np.mean(sift_vals(xn))
     
+    xn = random_noise(xn, mode='salt', amount=0.005)
+    xn = random_noise(xn, mode='pepper', amount=0.005)
+    
     channel_axis = len(xn.shape) if len(xn.shape) > 2 else None
     xn = filters.gaussian(xn, sigma=sigma, truncate=2, channel_axis=channel_axis)
     xn = xn + (og_mean - np.mean(sift_vals(xn)))
-
-    xn = random_noise(xn, mode='salt', amount=0.005)
-    xn = random_noise(xn, mode='pepper', amount=0.005)
 
     xn = upscale(xn, extrema)
 
